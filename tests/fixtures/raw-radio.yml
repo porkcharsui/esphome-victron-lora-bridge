@@ -1,0 +1,22 @@
+esphome:
+  name: sx1280-raw-fixture
+
+substitutions:
+  component_path: ../../components
+
+packages:
+  board: !include ../../esphome/packages/board.yaml
+  radio: !include ../../esphome/packages/radio.yaml
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          static uint32_t counter = 0;
+          std::vector<uint8_t> packet(4);
+          packet[0] = counter;
+          packet[1] = counter >> 8;
+          packet[2] = counter >> 16;
+          packet[3] = counter >> 24;
+          id(radio).transmit_packet(packet, 1, 0);
+          counter++;

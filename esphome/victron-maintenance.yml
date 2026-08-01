@@ -1,0 +1,7 @@
+substitutions:
+  # Maintenance normally runs on USB power; keep full CPU speed for Wi-Fi/OTA.
+  esp32_cpu_frequency: 240MHz
+
+packages:
+  production: !include victron.yml
+  maintenance: !include packages/network.yaml

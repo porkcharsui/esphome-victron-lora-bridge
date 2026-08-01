@@ -1,0 +1,44 @@
+substitutions:
+  oled_wake_timeout: 30s
+
+esphome:
+  on_boot:
+    # The SSD1306 setup priority is 400. Wake it immediately afterward so the
+    # startup state is visible before slower Wi-Fi/API initialization finishes.
+    - priority: 300
+      then:
+        - script.execute: oled_wake
+
+script:
+  - id: oled_wake
+    mode: restart
+    then:
+      - lambda: |-
+          id(oled_display).start_poller();
+          id(oled_display).turn_on();
+          id(oled_display).update();
+          ESP_LOGI("oled", "Display awake for ${oled_wake_timeout}");
+      - delay: ${oled_wake_timeout}
+      - lambda: |-
+          id(oled_display).turn_off();
+          id(oled_display).stop_poller();
+          ESP_LOGI("oled", "Display timeout; panel off");
+
+binary_sensor:
+  - platform: gpio
+    id: oled_boot_button
+    internal: true
+    pin:
+      number: GPIO0
+      inverted: true
+      ignore_strapping_warning: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on_off: 20ms
+    # Polling avoids relying on interrupts from the ESP32-S3 boot strapping pin
+    # while still detecting ordinary human button presses without difficulty.
+    use_interrupt: false
+    on_press:
+      - script.execute: oled_wake

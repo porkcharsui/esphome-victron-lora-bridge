@@ -1,0 +1,27 @@
+substitutions:
+  radio_rx_start: "true"
+
+spi:
+  id: radio_spi
+  clk_pin: GPIO5
+  miso_pin: GPIO3
+  mosi_pin: GPIO6
+
+sx1280:
+  id: radio
+  spi_id: radio_spi
+  cs_pin: GPIO7
+  rst_pin: GPIO8
+  dio1_pin: GPIO9
+  busy_pin: GPIO36
+  tx_enable_pin: GPIO10
+  rx_enable_pin: GPIO21
+  frequency: 2400.5MHz
+  bandwidth: 406.25kHz
+  spreading_factor: 7
+  coding_rate: 4/6
+  crc: true
+  preamble: 12
+  output_power: 3
+  rx_start: ${radio_rx_start}
+  tx_queue_size: 8

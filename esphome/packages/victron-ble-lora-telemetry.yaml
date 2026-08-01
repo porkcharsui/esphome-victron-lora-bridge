@@ -1,0 +1,272 @@
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - logger.log:
+            level: INFO
+            tag: victron_status
+            format: "🔎 Victron BLE monitoring started — continuous passive scan enabled for SmartShunt and SmartSolar"
+        - logger.log:
+            level: INFO
+            tag: sx1280
+            format: "📡 LoRa proximity beacon enabled — transmitting immediately and every 60 seconds"
+        - lambda: id(victron_ble_lora_transport).update();
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/Fabian-Schmidt/esphome-victron_ble
+      ref: 3e317e637735e36115bdb415e373200929f89bb3
+    components: [victron_ble]
+    refresh: never
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+    continuous: true
+
+globals:
+  - id: last_shunt_sample_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+  - id: last_solar_sample_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
+  - id: shunt_monitoring_announced
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: solar_monitoring_announced
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+victron_ble:
+  - id: smart_shunt
+    mac_address: !secret victron_shunt_mac
+    bindkey: !secret victron_shunt_key
+    on_battery_monitor_message:
+      - lambda: id(last_shunt_sample_ms) = millis();
+      - if:
+          condition:
+            lambda: return !id(shunt_monitoring_announced);
+          then:
+            - lambda: id(shunt_monitoring_announced) = true;
+            - delay: 1ms
+            - lambda: |-
+                const auto format_value = [](float value, const char *format) {
+                  return std::isnan(value) ? std::string("n/a") : str_sprintf(format, value);
+                };
+                const auto voltage = format_value(id(shunt_voltage).state, "%.2f V");
+                const auto current = format_value(id(shunt_current).state, "%.3f A");
+                const auto soc = format_value(id(shunt_soc).state, "%.1f%%");
+                ESP_LOGI("victron_status",
+                         "🔋 SmartShunt monitoring active — first valid data: voltage=%s, current=%s, SOC=%s",
+                         voltage.c_str(), current.c_str(), soc.c_str());
+  - id: smart_solar
+    mac_address: !secret victron_solar_mac
+    bindkey: !secret victron_solar_key
+    on_solar_charger_message:
+      - lambda: id(last_solar_sample_ms) = millis();
+      - if:
+          condition:
+            lambda: return !id(solar_monitoring_announced);
+          then:
+            - lambda: id(solar_monitoring_announced) = true;
+            - delay: 1ms
+            - lambda: |-
+                const auto format_value = [](float value, const char *format) {
+                  return std::isnan(value) ? std::string("n/a") : str_sprintf(format, value);
+                };
+                const auto battery = format_value(id(solar_battery_voltage).state, "%.2f V");
+                const auto current = format_value(id(solar_charge_current).state, "%.1f A");
+                const auto power = format_value(id(solar_pv_power).state, "%.0f W");
+                ESP_LOGI("victron_status",
+                         "☀️ SmartSolar monitoring active — first valid data: battery=%s, charge current=%s, PV power=%s",
+                         battery.c_str(), current.c_str(), power.c_str());
+
+sensor:
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_voltage
+    internal: true
+    type: BATTERY_VOLTAGE
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_current
+    internal: true
+    type: BATTERY_CURRENT
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_power
+    internal: true
+    type: BATTERY_POWER
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_soc
+    internal: true
+    type: STATE_OF_CHARGE
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_consumed_ah
+    internal: true
+    type: CONSUMED_AH
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_time_remaining
+    internal: true
+    type: TIME_TO_GO
+    filters: [{ timeout: 120s }]
+
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_battery_voltage
+    internal: true
+    type: BATTERY_VOLTAGE
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_charge_current
+    internal: true
+    type: BATTERY_CURRENT
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_pv_power
+    internal: true
+    type: PV_POWER
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_yield_today
+    internal: true
+    type: YIELD_TODAY
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_charger_state_code
+    internal: true
+    type: DEVICE_STATE
+    filters: [{ timeout: 120s }]
+  - platform: victron_ble
+    victron_ble_id: smart_solar
+    id: solar_error_code
+    internal: true
+    type: CHARGER_ERROR
+    filters: [{ timeout: 120s }]
+
+  - platform: template
+    id: shunt_sample_age
+    internal: true
+    unit_of_measurement: s
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      if (id(last_shunt_sample_ms) == 0) return NAN;
+      return (millis() - id(last_shunt_sample_ms)) / 1000.0f;
+  - platform: template
+    id: solar_sample_age
+    internal: true
+    unit_of_measurement: s
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      if (id(last_solar_sample_ms) == 0) return NAN;
+      return (millis() - id(last_solar_sample_ms)) / 1000.0f;
+
+  - platform: sx1280
+    sx1280_id: radio
+    id: victron_ble_lora_radio_tx_count
+    internal: true
+    type: tx_count
+  - platform: sx1280
+    sx1280_id: radio
+    id: victron_ble_lora_radio_failures
+    internal: true
+    type: radio_failures
+  - platform: sx1280
+    sx1280_id: radio
+    id: victron_ble_lora_radio_dropped
+    internal: true
+    type: dropped_packets
+  - platform: sx1280
+    sx1280_id: radio
+    id: victron_ble_lora_radio_recoveries
+    internal: true
+    type: recovery_count
+
+binary_sensor:
+  - platform: victron_ble
+    victron_ble_id: smart_shunt
+    id: shunt_alarm
+    internal: true
+    type: ALARM
+
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          if (id(last_shunt_sample_ms) != 0 && millis() - id(last_shunt_sample_ms) > 120000) {
+            id(shunt_alarm).invalidate_state();
+          }
+
+packet_transport:
+  platform: sx1280
+  id: victron_ble_lora_transport
+  sx1280_id: radio
+  transmit_enabled: true
+  send_on_update: false
+  update_interval: 60s
+  rolling_code_enable: true
+  ping_pong_enable: false
+  encryption:
+    key: !secret transport_key
+  repeat_count: 3
+  repeat_jitter: 250ms
+  sensors:
+    - id: shunt_voltage
+      broadcast_id: sv
+    - id: shunt_current
+      broadcast_id: si
+    - id: shunt_power
+      broadcast_id: sp
+    - id: shunt_soc
+      broadcast_id: ss
+    - id: shunt_consumed_ah
+      broadcast_id: sc
+    - id: shunt_time_remaining
+      broadcast_id: st
+    - id: solar_battery_voltage
+      broadcast_id: pv
+    - id: solar_charge_current
+      broadcast_id: pi
+    - id: solar_pv_power
+      broadcast_id: pp
+    - id: solar_yield_today
+      broadcast_id: py
+    - id: solar_charger_state_code
+      broadcast_id: ps
+    - id: solar_error_code
+      broadcast_id: pe
+    - id: shunt_sample_age
+      broadcast_id: sa
+    - id: solar_sample_age
+      broadcast_id: pa
+    - id: victron_ble_lora_radio_tx_count
+      broadcast_id: rt
+    - id: victron_ble_lora_radio_failures
+      broadcast_id: rf
+    - id: victron_ble_lora_radio_dropped
+      broadcast_id: rd
+    - id: victron_ble_lora_radio_recoveries
+      broadcast_id: rr
+  binary_sensors:
+    - id: shunt_alarm
+      broadcast_id: al

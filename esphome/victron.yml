@@ -1,0 +1,81 @@
+esphome:
+  name: victron-ble-lora
+  friendly_name: Victron BLE LoRa
+
+substitutions:
+  component_path: ../components
+  esp32_cpu_frequency: 80MHz
+  radio_rx_start: "false"
+
+packages:
+  board: !include packages/board.yaml
+  radio: !include packages/radio.yaml
+  telemetry: !include packages/victron-ble-lora-telemetry.yaml
+  oled_controls: !include packages/oled-controls.yaml
+
+esp32:
+  framework:
+    sdkconfig_options:
+      CONFIG_BT_CTRL_MODEM_SLEEP: "y"
+      CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1: "y"
+      CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL: "y"
+
+i2c:
+  sda: GPIO18
+  scl: GPIO17
+  scan: true
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: victron_ble_lora_status_font
+    size: 10
+  - file: "gfonts://Roboto Mono"
+    id: victron_ble_lora_tiny_font
+    size: 8
+  - file: "gfonts://Roboto Mono"
+    id: victron_ble_lora_soc_font
+    size: 28
+
+display:
+  - platform: ssd1306_i2c
+    id: oled_display
+    model: SSD1306 128x64
+    address: 0x3C
+    update_interval: 1s
+    lambda: |-
+      const uint32_t now = millis();
+      const bool shunt_fresh = id(last_shunt_sample_ms) != 0 && now - id(last_shunt_sample_ms) <= 120000;
+      const bool solar_fresh = id(last_solar_sample_ms) != 0 && now - id(last_solar_sample_ms) <= 120000;
+
+      it.printf(0, 0, id(victron_ble_lora_tiny_font), "SHUNT:%s  SOLAR:%s",
+                shunt_fresh ? "OK" : "--", solar_fresh ? "OK" : "--");
+
+      if (!std::isnan(id(shunt_soc).state)) {
+        it.printf(0, 10, id(victron_ble_lora_soc_font), "%.0f%%", id(shunt_soc).state);
+      } else {
+        it.print(0, 10, id(victron_ble_lora_soc_font), "--%");
+      }
+
+      if (!std::isnan(id(shunt_voltage).state)) {
+        it.printf(78, 13, id(victron_ble_lora_status_font), "%.1fV", id(shunt_voltage).state);
+      } else {
+        it.print(78, 13, id(victron_ble_lora_status_font), "--.-V");
+      }
+      if (!std::isnan(id(shunt_current).state)) {
+        it.printf(78, 27, id(victron_ble_lora_status_font), "%+.1fA", id(shunt_current).state);
+      } else {
+        it.print(78, 27, id(victron_ble_lora_status_font), "--.-A");
+      }
+      it.print(78, 41, id(victron_ble_lora_tiny_font), shunt_fresh ? "FRESH" : "STALE");
+
+      // Battery outline, terminal, and fill. The numeric SOC remains unmodified,
+      // while the gauge itself is safely clamped to its physical 0-100% range.
+      it.rectangle(0, 51, 124, 13);
+      it.filled_rectangle(124, 55, 4, 5);
+      if (!std::isnan(id(shunt_soc).state)) {
+        const float gauge_soc = std::max(0.0f, std::min(100.0f, id(shunt_soc).state));
+        const int gauge_width = static_cast<int>(std::round(gauge_soc * 1.2f));
+        if (gauge_width > 0) {
+          it.filled_rectangle(2, 53, gauge_width, 9);
+        }
+      }

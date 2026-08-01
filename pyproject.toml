@@ -1,0 +1,22 @@
+[project]
+name = "esphome-victron-lora-bridge"
+version = "0.1.0"
+description = "Two-node Victron BLE to SX1280 ESPHome telemetry bridge"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "esphome==2026.7.3",
+  "pillow==12.3.0",
+  "python-dotenv==1.1.1",
+  "pytest==8.4.1",
+  "ruff==0.12.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

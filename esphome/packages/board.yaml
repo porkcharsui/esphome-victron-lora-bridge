@@ -1,0 +1,23 @@
+substitutions:
+  esp32_cpu_frequency: 240MHz
+
+esp32:
+  board: esp32-s3-devkitc-1
+  cpu_frequency: ${esp32_cpu_frequency}
+  # ESPHome 2026.7 defaults to the native ESP-IDF toolchain, whose generated
+  # component requirements can make a clean Arduino build fail until retried.
+  toolchain: platformio
+  framework:
+    type: arduino
+    sdkconfig_options:
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "n"
+
+logger:
+  level: INFO
+  deassert_rts_dtr: true
+
+external_components:
+  - source:
+      type: local
+      path: ${component_path}
+    components: [sx1280]

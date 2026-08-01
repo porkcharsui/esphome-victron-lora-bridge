@@ -1,0 +1,408 @@
+esphome:
+  name: victron-ble-lora-uplink
+  friendly_name: Victron BLE LoRa Uplink
+
+substitutions:
+  component_path: ../components
+  victron_ble_lora_link_timeout_ms: "75000"
+
+packages:
+  board: !include packages/board.yaml
+  radio: !include packages/radio.yaml
+  network: !include packages/network.yaml
+  oled_controls: !include packages/oled-controls.yaml
+
+logger:
+  level: DEBUG
+
+web_server:
+  port: 80
+
+i2c:
+  sda: GPIO18
+  scl: GPIO17
+  scan: true
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: status_font
+    size: 10
+
+display:
+  - platform: ssd1306_i2c
+    id: oled_display
+    model: SSD1306 128x64
+    address: 0x3C
+    update_interval: 1s
+    lambda: |-
+      const bool wifi_connected = wifi::global_wifi_component != nullptr &&
+                                  wifi::global_wifi_component->is_connected();
+      const float packet_age = id(victron_ble_lora_transport).authenticated_packet_age();
+      const bool packet_seen = !isnan(packet_age);
+      const bool victron_ble_lora_connected = packet_seen && packet_age * 1000.0f <= ${victron_ble_lora_link_timeout_ms};
+
+      it.print(0, 0, id(status_font), "VICTRON LORA BRIDGE");
+      it.horizontal_line(0, 13, 128);
+
+      if (wifi_connected) {
+        const auto addresses = wifi::global_wifi_component->get_ip_addresses();
+        char ip_address[network::IP_ADDRESS_BUFFER_SIZE];
+        addresses[0].str_to(ip_address);
+        it.printf(0, 16, id(status_font), "WiFi  %s", ip_address);
+      } else {
+        it.print(0, 16, id(status_font), "WiFi  OFFLINE");
+      }
+
+      if (!packet_seen) {
+        it.print(0, 28, id(status_font), "LoRa  WAITING");
+        it.print(0, 40, id(status_font), "Packet  never");
+      } else {
+        it.printf(0, 28, id(status_font), "LoRa  %s", victron_ble_lora_connected ? "OK" : "STALE");
+        if (packet_age < 120.0f) {
+          it.printf(0, 40, id(status_font), "Packet  %.0f sec ago", packet_age);
+        } else {
+          it.printf(0, 40, id(status_font), "Packet  %.0f min ago", packet_age / 60.0f);
+        }
+      }
+
+      if (id(uplink_radio_rssi).has_state() && id(uplink_radio_snr).has_state()) {
+        const float rssi = id(uplink_radio_rssi).state;
+        const float snr = id(uplink_radio_snr).state;
+        it.printf(0, 52, id(status_font), "RF %.0fdBm %.0fdB",
+                  rssi, snr);
+
+        // Rate RSSI and SNR independently, then display the weaker rating so
+        // one favorable measurement cannot hide a marginal LoRa link.
+        const int rssi_bars = rssi >= -75.0f ? 4 : rssi >= -90.0f ? 3 : rssi >= -105.0f ? 2 : 1;
+        const int snr_bars = snr >= 7.0f ? 4 : snr >= 0.0f ? 3 : snr >= -5.0f ? 2 : 1;
+        const int signal_bars = std::min(rssi_bars, snr_bars);
+        for (int bar = 0; bar < signal_bars; bar++) {
+          const int height = 3 + bar * 3;
+          it.filled_rectangle(110 + bar * 4, 64 - height, 3, height);
+        }
+      } else {
+        it.print(0, 52, id(status_font), "RF  listening");
+      }
+
+packet_transport:
+  platform: sx1280
+  id: victron_ble_lora_transport
+  sx1280_id: radio
+  update_interval: 60s
+  ping_pong_enable: false
+  repeat_count: 1
+  on_first_packet:
+    - if:
+        condition:
+          lambda: return !id(oled_display).is_on();
+        then:
+          - script.execute: oled_wake
+  providers:
+    - name: victron-ble-lora
+      encryption:
+        key: !secret transport_key
+
+sensor:
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: sv
+    name: SmartShunt Voltage
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: si
+    name: SmartShunt Current
+    unit_of_measurement: A
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 2
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: sp
+    name: SmartShunt Power
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: ss
+    name: SmartShunt State of Charge
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 1
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: sc
+    name: SmartShunt Consumed Amp Hours
+    unit_of_measurement: Ah
+    accuracy_decimals: 1
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: st
+    name: SmartShunt Time Remaining
+    unit_of_measurement: min
+    device_class: duration
+    accuracy_decimals: 0
+
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: pv
+    name: SmartSolar Battery Voltage
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: pi
+    name: SmartSolar Charge Current
+    unit_of_measurement: A
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 1
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: pp
+    name: SmartSolar PV Power
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: py
+    name: SmartSolar Yield Today
+    unit_of_measurement: kWh
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: packet_transport
+    internal: false
+    id: solar_charger_state_code
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: ps
+    name: SmartSolar Charger State Code
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    id: solar_error_code
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: pe
+    name: SmartSolar Error Code
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: sa
+    name: SmartShunt Sample Age at Victron BLE LoRa
+    unit_of_measurement: s
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: pa
+    name: SmartSolar Sample Age at Victron BLE LoRa
+    unit_of_measurement: s
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: rt
+    name: Victron BLE LoRa Radio TX Count
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: rf
+    name: Victron BLE LoRa Radio Failures
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: rd
+    name: Victron BLE LoRa Radio Dropped Packets
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: rr
+    name: Victron BLE LoRa Radio Recoveries
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
+  - platform: template
+    name: Authenticated Packet Age
+    unit_of_measurement: s
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(victron_ble_lora_transport).authenticated_packet_age();
+
+  - platform: sx1280
+    sx1280_id: radio
+    type: rx_count
+    name: Uplink Radio RX Count
+  - platform: sx1280
+    sx1280_id: radio
+    type: valid_packets
+    name: Uplink Radio Valid Packets
+  - platform: sx1280
+    sx1280_id: radio
+    type: radio_failures
+    name: Uplink Radio CRC and Radio Failures
+  - platform: sx1280
+    sx1280_id: radio
+    type: dropped_packets
+    name: Uplink Radio Dropped Packets
+  - platform: sx1280
+    sx1280_id: radio
+    type: oversized_packets
+    name: Uplink Radio Oversized Packets
+  - platform: sx1280
+    sx1280_id: radio
+    type: recovery_count
+    name: Uplink Radio Recoveries
+  - platform: sx1280
+    sx1280_id: radio
+    type: last_error
+    name: Uplink Radio Last Error
+  - platform: sx1280
+    sx1280_id: radio
+    type: last_packet_age
+    name: Uplink Radio Packet Age
+  - platform: sx1280
+    sx1280_id: radio
+    type: rssi
+    id: uplink_radio_rssi
+    name: Uplink Radio RSSI
+  - platform: sx1280
+    sx1280_id: radio
+    type: snr
+    id: uplink_radio_snr
+    name: Uplink Radio SNR
+
+binary_sensor:
+  - platform: packet_transport
+    internal: false
+    transport_id: victron_ble_lora_transport
+    provider: victron-ble-lora
+    remote_id: al
+    name: SmartShunt Alarm
+    device_class: problem
+  - platform: template
+    name: Victron BLE LoRa Link
+    id: victron_ble_lora_link
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: return id(victron_ble_lora_transport).is_link_available(${victron_ble_lora_link_timeout_ms});
+
+text_sensor:
+  - platform: template
+    name: SmartSolar Charger State
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(solar_charger_state_code).state)) return {"Unavailable"};
+      switch (static_cast<int>(id(solar_charger_state_code).state)) {
+        case 0: return {"Off"};
+        case 1: return {"Low power"};
+        case 2: return {"Fault"};
+        case 3: return {"Bulk"};
+        case 4: return {"Absorption"};
+        case 5: return {"Float"};
+        case 6: return {"Storage"};
+        case 7: return {"Equalize (manual)"};
+        case 8: return {"Pass-through"};
+        case 9: return {"Inverting"};
+        case 10: return {"Assisting"};
+        case 11: return {"Power supply"};
+        case 244: return {"Sustain"};
+        case 245: return {"Starting up"};
+        case 246: return {"Repeated absorption"};
+        case 247: return {"Auto equalize"};
+        case 248: return {"BatterySafe"};
+        case 249: return {"Load detect"};
+        case 250: return {"Blocked"};
+        case 251: return {"Test"};
+        case 252: return {"External control"};
+        default: return {"Unknown (" + to_string(static_cast<int>(id(solar_charger_state_code).state)) + ")"};
+      }
+  - platform: template
+    name: SmartSolar Error
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(solar_error_code).state)) return {"Unavailable"};
+      const int code = static_cast<int>(id(solar_error_code).state);
+      switch (code) {
+        case 0: return {"No error"};
+        case 1: return {"Battery temperature too high"};
+        case 2: return {"Battery voltage too high"};
+        case 11: return {"Battery ripple voltage high"};
+        case 14: return {"Battery temperature too low"};
+        case 17: return {"Charger temperature too high"};
+        case 18: return {"Charger over-current"};
+        case 19: return {"Charger current polarity reversed"};
+        case 20: return {"Bulk time limit exceeded"};
+        case 21: return {"Current sensor issue"};
+        case 24: return {"Fan failure"};
+        case 26: return {"Terminals overheated"};
+        case 27: return {"Charger short circuit"};
+        case 28: return {"Converter issue"};
+        case 29: return {"Over-charge protection"};
+        case 33: return {"PV voltage too high"};
+        case 34: return {"PV current too high"};
+        case 35: return {"PV power too high"};
+        case 38: return {"Input shutdown: battery over-voltage"};
+        case 39: return {"Input shutdown: off-mode current"};
+        case 40: return {"PV input failed to shut down"};
+        case 65: return {"Communication warning"};
+        case 66: return {"Synchronized charging configuration"};
+        case 67: return {"BMS connection lost"};
+        case 68: case 69: case 70: case 71: return {"Network misconfigured"};
+        case 80: case 81: case 82: case 83: case 84: case 85: case 86: case 87: return {"PV input shutdown"};
+        case 114: return {"CPU temperature too high"};
+        case 116: return {"Calibration data lost"};
+        case 117: return {"Invalid firmware"};
+        case 119: return {"Settings data lost"};
+        default: return {"Error " + to_string(code)};
+      }

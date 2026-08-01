@@ -1,3 +1,5 @@
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -208,6 +210,15 @@ tempCodeRunnerFile.py
 
 # PyPI configuration file
 .pypirc
+
+# ESPHome local state and generated credentials
+.esphome/
+esphome/.esphome/
+esphome/secrets.yaml
+
+# PlatformIO build products
+.pioenvs/
+.piolibdeps/
 
 # Marimo
 marimo/_static/
