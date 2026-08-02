@@ -7,7 +7,7 @@ from pathlib import Path
 Import("env")
 
 project_dir = Path(env.subst("$PROJECT_DIR"))
-module_dir = (project_dir / "../victron").resolve()
+module_dir = (project_dir / "../victron-ble").resolve()
 bootstrap = str(module_dir / "src/bootstrap.h")
 external_sources = [
     module_dir / "src/bootstrap.h",

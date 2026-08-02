@@ -14,7 +14,7 @@ shares the BLE stack with Meshtastic's normal phone service. On T-Echo, the
 module pauses scanning for an active phone connection and resumes within about
 one second after disconnecting; this avoids starving nRF52 connection events.
 
-All Victron code lives in `meshtastic/victron`, outside the firmware submodule.
+All Victron code lives in `meshtastic/victron-ble`, outside the firmware submodule.
 The overlay's pre-script injects that code into Meshtastic as a project object
 and supplies a strong `lateInitVariant()` registration hook. The pinned
 Meshtastic fork has only a generic switch that suppresses construction of its
