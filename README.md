@@ -97,6 +97,13 @@ The supplied configuration targets:
 Read the [hardware qualification and deployment guide](docs/deployment.md)
 before flashing either board.
 
+### 3D-printable case
+
+The [3MF project](case/esphome-victron-lora-bridge.3mf) includes the slimline
+case and a remixed lid that attaches to an IKEA SKÅDIS pegboard. See the
+[case attribution and license](case/README.md) before redistributing or
+modifying the model.
+
 ## Installation
 
 Development and deployment are reproducible through the included Nix flake.
@@ -235,7 +242,11 @@ power-cycle, stale-data, and soak-test checklist in the
 
 ## License
 
-Released under the [MIT License](LICENSE).
+The software is released under the [MIT License](LICENSE). The 3D-printable
+case is a derivative work distributed under the
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+license](https://creativecommons.org/licenses/by-nc-sa/4.0/); see its
+[attribution notice](case/README.md).
 
 ## Legal disclaimer
 
