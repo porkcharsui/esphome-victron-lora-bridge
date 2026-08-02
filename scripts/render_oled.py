@@ -14,6 +14,16 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 DISPLAY_SIZE = (128, 64)
 DEFAULT_FONT_PATTERN = "Roboto Mono@400@False@*.ttf"
+VAN_LEFT_COLUMN_WIDTH = 78
+VAN_LEFT_COLUMN_CENTER = VAN_LEFT_COLUMN_WIDTH // 2
+VAN_RIGHT_COLUMN_CENTER = (
+    VAN_LEFT_COLUMN_WIDTH + (DISPLAY_SIZE[0] - VAN_LEFT_COLUMN_WIDTH) // 2
+)
+BATTERY_TERMINAL_WIDTH = 4
+BATTERY_BODY_WIDTH = VAN_LEFT_COLUMN_WIDTH - BATTERY_TERMINAL_WIDTH
+BATTERY_INNER_WIDTH = BATTERY_BODY_WIDTH - 4
+BATTERY_TOP = 34
+BATTERY_HEIGHT = DISPLAY_SIZE[1] - BATTERY_TOP
 
 
 @dataclass(frozen=True)
@@ -61,14 +71,15 @@ def draw_text(
     xy: tuple[int, int],
     text: str,
     font: ImageFont.FreeTypeFont,
+    anchor: str = "lt",
 ) -> None:
-    draw.text(xy, text, font=font, fill=1, anchor="lt", stroke_width=0)
+    draw.text(xy, text, font=font, fill=1, anchor=anchor, stroke_width=0)
 
 
 def gauge_fill_width(soc: float | None) -> int:
     if soc is None or math.isnan(soc):
         return 0
-    return math.floor(max(0.0, min(100.0, soc)) * 1.2 + 0.5)
+    return math.floor(max(0.0, min(100.0, soc)) * BATTERY_INNER_WIDTH / 100.0 + 0.5)
 
 
 def signal_bar_count(rssi: float | None, snr: float | None) -> int:
@@ -89,21 +100,47 @@ def render_van(state: VanState, font_path: Path | None = None) -> Image.Image:
 
     shunt = "OK" if state.shunt_fresh else "--"
     solar = "OK" if state.solar_fresh else "--"
-    draw_text(draw, (0, 0), f"SHUNT:{shunt}  SOLAR:{solar}", tiny)
+    draw_text(
+        draw,
+        (DISPLAY_SIZE[0] // 2, 0),
+        f"SHUNT:{shunt}  SOLAR:{solar}",
+        tiny,
+        anchor="mt",
+    )
 
     soc_text = "--%" if state.soc is None else f"{state.soc:.0f}%"
-    draw_text(draw, (0, 10), soc_text, soc_font)
+    draw_text(draw, (VAN_LEFT_COLUMN_CENTER, 10), soc_text, soc_font, anchor="mt")
     voltage = "--.-V" if state.voltage is None else f"{state.voltage:.1f}V"
     current = "--.-A" if state.current is None else f"{state.current:+.1f}A"
-    draw_text(draw, (78, 13), voltage, status)
-    draw_text(draw, (78, 27), current, status)
-    draw_text(draw, (78, 41), "FRESH" if state.shunt_fresh else "STALE", tiny)
+    draw_text(draw, (VAN_RIGHT_COLUMN_CENTER, 12), voltage, status, anchor="mt")
+    draw_text(draw, (VAN_RIGHT_COLUMN_CENTER, 31), current, status, anchor="mt")
+    draw_text(
+        draw,
+        (VAN_RIGHT_COLUMN_CENTER, 53),
+        "FRESH" if state.shunt_fresh else "STALE",
+        tiny,
+        anchor="mt",
+    )
 
-    draw.rectangle((0, 51, 123, 63), outline=1)
-    draw.rectangle((124, 55, 127, 59), fill=1)
+    draw.rectangle(
+        (0, BATTERY_TOP, BATTERY_BODY_WIDTH - 1, DISPLAY_SIZE[1] - 1),
+        outline=1,
+    )
+    draw.rectangle(
+        (
+            BATTERY_BODY_WIDTH,
+            BATTERY_TOP + 9,
+            VAN_LEFT_COLUMN_WIDTH - 1,
+            BATTERY_TOP + 20,
+        ),
+        fill=1,
+    )
     fill_width = gauge_fill_width(state.soc)
     if fill_width:
-        draw.rectangle((2, 53, 1 + fill_width, 61), fill=1)
+        draw.rectangle(
+            (2, BATTERY_TOP + 2, 1 + fill_width, DISPLAY_SIZE[1] - 3),
+            fill=1,
+        )
     return image
 
 
