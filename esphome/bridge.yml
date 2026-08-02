@@ -5,6 +5,7 @@ esphome:
 substitutions:
   component_path: ../components
   victron_ble_lora_link_timeout_ms: "75000"
+  oled_page_count: "2"
 
 packages:
   board: !include packages/board.yaml
@@ -27,6 +28,12 @@ font:
   - file: "gfonts://Roboto Mono"
     id: status_font
     size: 10
+  - file: "gfonts://Roboto Mono"
+    id: tiny_font
+    size: 8
+  - file: "gfonts://Roboto Mono"
+    id: soc_font
+    size: 28
 
 display:
   - platform: ssd1306_i2c
@@ -40,6 +47,66 @@ display:
       const float packet_age = id(victron_ble_lora_transport).authenticated_packet_age();
       const bool packet_seen = !isnan(packet_age);
       const bool victron_ble_lora_connected = packet_seen && packet_age * 1000.0f <= ${victron_ble_lora_link_timeout_ms};
+
+      if (id(oled_page) == 1) {
+        const float shunt_age = id(uplink_shunt_sample_age).has_state() && packet_seen
+                                    ? id(uplink_shunt_sample_age).state + packet_age
+                                    : NAN;
+        const float solar_age = id(uplink_solar_sample_age).has_state() && packet_seen
+                                    ? id(uplink_solar_sample_age).state + packet_age
+                                    : NAN;
+        const bool shunt_fresh = !isnan(shunt_age) && shunt_age <= 120.0f;
+        const bool solar_fresh = !isnan(solar_age) && solar_age <= 120.0f;
+
+        it.printf(64, 0, id(tiny_font), TextAlign::TOP_CENTER,
+                  "SHUNT:%s  SOLAR:%s",
+                  shunt_fresh ? "OK" : "--", solar_fresh ? "OK" : "--");
+
+        constexpr int left_column_center = 39;
+        constexpr int right_column_center = 103;
+        if (id(uplink_shunt_soc).has_state() &&
+            !isnan(id(uplink_shunt_soc).state)) {
+          it.printf(left_column_center, 8, id(soc_font), TextAlign::TOP_CENTER,
+                    "%.0f%%", id(uplink_shunt_soc).state);
+        } else {
+          it.print(left_column_center, 8, id(soc_font), TextAlign::TOP_CENTER, "--%");
+        }
+
+        if (id(uplink_shunt_voltage).has_state() &&
+            !isnan(id(uplink_shunt_voltage).state)) {
+          it.printf(right_column_center, 12, id(status_font), TextAlign::TOP_CENTER,
+                    "%.1fV", id(uplink_shunt_voltage).state);
+        } else {
+          it.print(right_column_center, 12, id(status_font),
+                   TextAlign::TOP_CENTER, "--.-V");
+        }
+        if (id(uplink_shunt_current).has_state() &&
+            !isnan(id(uplink_shunt_current).state)) {
+          it.printf(right_column_center, 31, id(status_font), TextAlign::TOP_CENTER,
+                    "%+.1fA", id(uplink_shunt_current).state);
+        } else {
+          it.print(right_column_center, 31, id(status_font),
+                   TextAlign::TOP_CENTER, "--.-A");
+        }
+        it.print(right_column_center, 53, id(tiny_font), TextAlign::TOP_CENTER,
+                 shunt_fresh ? "FRESH" : "STALE");
+
+        constexpr int battery_top = 40;
+        constexpr int battery_inner_width = 70;
+        it.rectangle(0, battery_top, 74, 24);
+        it.filled_rectangle(74, battery_top + 7, 4, 10);
+        if (id(uplink_shunt_soc).has_state() &&
+            !isnan(id(uplink_shunt_soc).state)) {
+          const float gauge_soc = std::max(
+              0.0f, std::min(100.0f, id(uplink_shunt_soc).state));
+          const int gauge_width = static_cast<int>(std::round(
+              gauge_soc * battery_inner_width / 100.0f));
+          if (gauge_width > 0) {
+            it.filled_rectangle(2, battery_top + 2, gauge_width, 20);
+          }
+        }
+        return;
+      }
 
       it.print(0, 0, id(status_font), "VICTRON LORA BRIDGE");
       it.horizontal_line(0, 13, 128);
@@ -105,6 +172,7 @@ packet_transport:
 sensor:
   - platform: packet_transport
     internal: false
+    id: uplink_shunt_voltage
     transport_id: victron_ble_lora_transport
     provider: victron-ble-lora
     remote_id: sv
@@ -115,6 +183,7 @@ sensor:
     accuracy_decimals: 2
   - platform: packet_transport
     internal: false
+    id: uplink_shunt_current
     transport_id: victron_ble_lora_transport
     provider: victron-ble-lora
     remote_id: si
@@ -135,6 +204,7 @@ sensor:
     accuracy_decimals: 1
   - platform: packet_transport
     internal: false
+    id: uplink_shunt_soc
     transport_id: victron_ble_lora_transport
     provider: victron-ble-lora
     remote_id: ss
@@ -221,6 +291,7 @@ sensor:
     accuracy_decimals: 0
   - platform: packet_transport
     internal: false
+    id: uplink_shunt_sample_age
     transport_id: victron_ble_lora_transport
     provider: victron-ble-lora
     remote_id: sa
@@ -230,6 +301,7 @@ sensor:
     accuracy_decimals: 0
   - platform: packet_transport
     internal: false
+    id: uplink_solar_sample_age
     transport_id: victron_ble_lora_transport
     provider: victron-ble-lora
     remote_id: pa

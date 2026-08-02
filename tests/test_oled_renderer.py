@@ -74,7 +74,7 @@ def test_van_battery_gauge_is_spaced_below_soc_and_reaches_bottom() -> None:
     ("x_start", "x_end", "y_start", "y_end", "expected_center"),
     (
         (0, 128, 0, 9, render_oled.DISPLAY_SIZE[0] // 2),
-        (0, 78, 10, 30, render_oled.VAN_LEFT_COLUMN_CENTER),
+        (0, 78, 8, 28, render_oled.VAN_LEFT_COLUMN_CENTER),
         (78, 128, 12, 23, render_oled.VAN_RIGHT_COLUMN_CENTER),
         (78, 128, 31, 42, render_oled.VAN_RIGHT_COLUMN_CENTER),
         (78, 128, 53, 63, render_oled.VAN_RIGHT_COLUMN_CENTER),
@@ -99,12 +99,36 @@ def test_van_values_are_centered_in_their_columns(
         render_oled.UplinkState(),
         render_oled.UplinkState(link="waiting", age=None, rssi=None, snr=None),
         render_oled.UplinkState(wifi="offline", link="stale", age=300),
+        render_oled.UplinkState(page="battery"),
     ),
 )
 def test_uplink_render_is_native_monochrome(state: object) -> None:
     image = render_oled.render_uplink(state)
     assert image.mode == "1"
     assert image.size == (128, 64)
+
+
+def test_uplink_battery_page_matches_van_data_layout() -> None:
+    uplink = render_oled.render_uplink(
+        render_oled.UplinkState(
+            page="battery",
+            soc=61.0,
+            voltage=12.8,
+            current=4.2,
+            shunt_fresh=False,
+            solar_fresh=True,
+        )
+    )
+    van = render_oled.render_van(
+        render_oled.VanState(
+            soc=61.0,
+            voltage=12.8,
+            current=4.2,
+            shunt_fresh=False,
+            solar_fresh=True,
+        )
+    )
+    assert uplink.tobytes() == van.tobytes()
 
 
 def test_scaled_preview_uses_nearest_neighbor(tmp_path: Path) -> None:
@@ -117,4 +141,4 @@ def test_scaled_preview_uses_nearest_neighbor(tmp_path: Path) -> None:
     with Image.open(scaled_output) as scaled:
         assert scaled.mode == "1"
         assert scaled.size == (512, 256)
-        assert bool(scaled.getpixel((8, 144))) == bool(image.getpixel((2, 36)))
+        assert bool(scaled.getpixel((8, 168))) == bool(image.getpixel((2, 42)))

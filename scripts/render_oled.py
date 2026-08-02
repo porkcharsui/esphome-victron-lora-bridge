@@ -22,7 +22,8 @@ VAN_RIGHT_COLUMN_CENTER = (
 BATTERY_TERMINAL_WIDTH = 4
 BATTERY_BODY_WIDTH = VAN_LEFT_COLUMN_WIDTH - BATTERY_TERMINAL_WIDTH
 BATTERY_INNER_WIDTH = BATTERY_BODY_WIDTH - 4
-BATTERY_TOP = 34
+SOC_TOP = 8
+BATTERY_TOP = 40
 BATTERY_HEIGHT = DISPLAY_SIZE[1] - BATTERY_TOP
 
 
@@ -37,12 +38,18 @@ class VanState:
 
 @dataclass(frozen=True)
 class UplinkState:
+    page: str = "home"
     wifi: str = "connected"
     ip: str = "192.168.1.42"
     link: str = "ok"
     age: float | None = 12.0
     rssi: float | None = -67.0
     snr: float | None = 9.0
+    soc: float | None = 78.0
+    voltage: float | None = 13.2
+    current: float | None = -2.4
+    shunt_fresh: bool = True
+    solar_fresh: bool = True
 
 
 def parse_optional_float(value: str) -> float | None:
@@ -109,7 +116,13 @@ def render_van(state: VanState, font_path: Path | None = None) -> Image.Image:
     )
 
     soc_text = "--%" if state.soc is None else f"{state.soc:.0f}%"
-    draw_text(draw, (VAN_LEFT_COLUMN_CENTER, 10), soc_text, soc_font, anchor="mt")
+    draw_text(
+        draw,
+        (VAN_LEFT_COLUMN_CENTER, SOC_TOP),
+        soc_text,
+        soc_font,
+        anchor="mt",
+    )
     voltage = "--.-V" if state.voltage is None else f"{state.voltage:.1f}V"
     current = "--.-A" if state.current is None else f"{state.current:+.1f}A"
     draw_text(draw, (VAN_RIGHT_COLUMN_CENTER, 12), voltage, status, anchor="mt")
@@ -129,9 +142,9 @@ def render_van(state: VanState, font_path: Path | None = None) -> Image.Image:
     draw.rectangle(
         (
             BATTERY_BODY_WIDTH,
-            BATTERY_TOP + 9,
+            BATTERY_TOP + 7,
             VAN_LEFT_COLUMN_WIDTH - 1,
-            BATTERY_TOP + 20,
+            BATTERY_TOP + 16,
         ),
         fill=1,
     )
@@ -146,6 +159,18 @@ def render_van(state: VanState, font_path: Path | None = None) -> Image.Image:
 
 def render_uplink(state: UplinkState, font_path: Path | None = None) -> Image.Image:
     font_path = font_path or resolve_font_path()
+    if state.page == "battery":
+        return render_van(
+            VanState(
+                soc=state.soc,
+                voltage=state.voltage,
+                current=state.current,
+                shunt_fresh=state.shunt_fresh,
+                solar_fresh=state.solar_fresh,
+            ),
+            font_path,
+        )
+
     status = load_font(font_path, 10)
     image = Image.new("1", DISPLAY_SIZE, 0)
     draw = ImageDraw.Draw(image)
@@ -210,6 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--solar-fresh", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument("--wifi", choices=("connected", "offline"), default="connected")
+    parser.add_argument("--page", choices=("home", "battery"), default="home")
     parser.add_argument("--ip", default="192.168.1.42")
     parser.add_argument("--link", choices=("ok", "stale", "waiting"), default="ok")
     parser.add_argument("--age", type=parse_optional_float, default=12.0)
@@ -235,12 +261,18 @@ def main() -> None:
     else:
         image = render_uplink(
             UplinkState(
+                page=args.page,
                 wifi=args.wifi,
                 ip=args.ip,
                 link=args.link,
                 age=args.age,
                 rssi=args.rssi,
                 snr=args.snr,
+                soc=args.soc,
+                voltage=args.voltage,
+                current=args.current,
+                shunt_fresh=args.shunt_fresh,
+                solar_fresh=args.solar_fresh,
             )
         )
     scaled_output = save_previews(image, args.output, args.scale)

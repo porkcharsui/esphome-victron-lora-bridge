@@ -1,5 +1,6 @@
 substitutions:
   oled_wake_timeout: 30s
+  oled_page_count: "1"
 
 esphome:
   on_boot:
@@ -14,15 +15,25 @@ script:
     mode: restart
     then:
       - lambda: |-
+          if (!id(oled_display).is_on()) {
+            id(oled_page) = 0;
+          }
           id(oled_display).start_poller();
           id(oled_display).turn_on();
           id(oled_display).update();
           ESP_LOGI("oled", "Display awake for ${oled_wake_timeout}");
       - delay: ${oled_wake_timeout}
       - lambda: |-
+          id(oled_page) = 0;
           id(oled_display).turn_off();
           id(oled_display).stop_poller();
           ESP_LOGI("oled", "Display timeout; panel off");
+
+globals:
+  - id: oled_page
+    type: uint8_t
+    restore_value: false
+    initial_value: "0"
 
 binary_sensor:
   - platform: gpio
@@ -41,4 +52,10 @@ binary_sensor:
     # while still detecting ordinary human button presses without difficulty.
     use_interrupt: false
     on_press:
+      - lambda: |-
+          if (id(oled_display).is_on()) {
+            id(oled_page) = (id(oled_page) + 1) % ${oled_page_count};
+            ESP_LOGI("oled", "Display page %u of ${oled_page_count}",
+                     id(oled_page) + 1);
+          }
       - script.execute: oled_wake

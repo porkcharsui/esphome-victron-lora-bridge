@@ -33,8 +33,11 @@ periodically sends a complete telemetry snapshot. The uplink node validates the 
 rejects replays, and exposes the remote measurements as native ESPHome
 entities. Both nodes have a small status display for local troubleshooting.
 Each OLED wakes for 30 seconds at startup and then switches its panel off to
-prevent burn-in. Pressing the board's BOOT button wakes it for another 30
-seconds or restarts the active timeout.
+prevent burn-in. Pressing the board's BOOT button while the display is off
+wakes it on its home screen for another 30 seconds. While the uplink display is
+active, each press switches between its link-status home screen and remote
+battery-data screen and restarts the timeout. The van display remains
+single-page, so an active press only restarts its timeout.
 
 ## What it reports
 
@@ -175,8 +178,8 @@ uv run esphome compile esphome/bridge.yml
 Flash `esphome/victron.yml` to the Victron BLE LoRa node over USB. Flash
 `esphome/bridge.yml` to the uplink node, then add `victron-ble-lora-uplink` to Home
 Assistant through the ESPHome integration. The uplink OLED and diagnostic
-entities show radio reception, authentication status, signal strength, and
-packet age.
+entities show radio reception, authentication status, signal strength, packet
+age, and a paged view of the remote battery data.
 
 Use `esphome/victron-maintenance.yml` only when the Victron BLE LoRa node needs temporary
 network access, then restore the production image.
@@ -207,6 +210,9 @@ uv run python scripts/render_oled.py \
 uv run python scripts/render_oled.py \
   --node uplink --wifi connected --link ok --age 12 --rssi=-67 --snr 9 \
   --output uplink.png
+uv run python scripts/render_oled.py \
+  --node uplink --page battery --soc 78 --voltage 13.2 --current=-2.4 \
+  --output uplink-battery.png
 ```
 
 Use `unknown` for an unavailable numeric value, `--no-shunt-fresh` or

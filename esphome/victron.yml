@@ -54,10 +54,10 @@ display:
       constexpr int left_column_center = 39;
       constexpr int right_column_center = 103;
       if (!std::isnan(id(shunt_soc).state)) {
-        it.printf(left_column_center, 10, id(victron_ble_lora_soc_font),
+        it.printf(left_column_center, 8, id(victron_ble_lora_soc_font),
                   TextAlign::TOP_CENTER, "%.0f%%", id(shunt_soc).state);
       } else {
-        it.print(left_column_center, 10, id(victron_ble_lora_soc_font),
+        it.print(left_column_center, 8, id(victron_ble_lora_soc_font),
                  TextAlign::TOP_CENTER, "--%");
       }
 
@@ -81,15 +81,15 @@ display:
       // Keep the complete battery icon inside the same 78-pixel column as SOC.
       // The numeric SOC remains unmodified, while the gauge itself is safely
       // clamped to its physical 0-100% range.
-      constexpr int battery_top = 34;
+      constexpr int battery_top = 40;
       constexpr int battery_inner_width = 70;
-      it.rectangle(0, battery_top, 74, 30);
-      it.filled_rectangle(74, battery_top + 9, 4, 12);
+      it.rectangle(0, battery_top, 74, 24);
+      it.filled_rectangle(74, battery_top + 7, 4, 10);
       if (!std::isnan(id(shunt_soc).state)) {
         const float gauge_soc = std::max(0.0f, std::min(100.0f, id(shunt_soc).state));
         const int gauge_width = static_cast<int>(std::round(
             gauge_soc * battery_inner_width / 100.0f));
         if (gauge_width > 0) {
-          it.filled_rectangle(2, battery_top + 2, gauge_width, 26);
+          it.filled_rectangle(2, battery_top + 2, gauge_width, 20);
         }
       }
