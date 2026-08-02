@@ -1,8 +1,8 @@
 # ESPHome Victron LoRa Bridge
 
 A two-node, read-only telemetry bridge that carries Victron SmartShunt and
-SmartSolar data from Bluetooth range into Home Assistant over a dedicated
-2.4 GHz LoRa link.
+SmartSolar data from an off-grid system over a long-distance 2.4 GHz LoRa link
+to a Wi-Fi-connected ESPHome node, which publishes the data to Home Assistant.
 
 ## The use case
 
@@ -67,6 +67,14 @@ and should not be used as the sole source of safety-critical alarms.
 - Sensor values become unavailable when their Victron source has not produced
   a valid advertisement for two minutes. Link diagnostics distinguish stale
   source data from radio failure.
+
+> [!NOTE]
+> This project uses 2.4 GHz LoRa because I already had compatible SX1280 boards,
+> not because 2.4 GHz is the best band for this application. A region-appropriate
+> sub-GHz LoRa radio, such as an 868 or 915 MHz design, would generally provide
+> better propagation and range around a van or similar installation. Sub-GHz
+> hardware is not a drop-in replacement for the SX1280 boards and configuration
+> supplied here, and permitted frequencies vary by region.
 
 ## Hardware
 
