@@ -570,7 +570,6 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "esphome" },
-    { name = "pillow" },
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "ruff" },
@@ -581,7 +580,6 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "esphome", specifier = "==2026.7.3" },
-    { name = "pillow", specifier = "==12.3.0" },
     { name = "pytest", specifier = "==8.4.1" },
     { name = "python-dotenv", specifier = "==1.1.1" },
     { name = "ruff", specifier = "==0.12.7" },

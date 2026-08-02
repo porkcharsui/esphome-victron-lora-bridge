@@ -197,8 +197,9 @@ nix flake check
 ### Preview the OLED displays
 
 The OLED layouts can be rendered locally without flashing either board. The
-renderer writes a native 128×64 monochrome PNG and, by default, a 4× enlarged
-nearest-neighbor preview:
+preview compiles an ESPHome Host build backed by SDL, using the same layout
+functions and ESPHome font renderer as the device firmware. ImageMagick writes
+a native 128×64 monochrome PNG and, by default, a 4× nearest-neighbor preview:
 
 ![Van OLED preview](docs/images/oled-van@4x.png)
 
@@ -218,7 +219,8 @@ uv run python scripts/render_oled.py \
 Use `unknown` for an unavailable numeric value, `--no-shunt-fresh` or
 `--no-solar-fresh` for stale van data, and `--scale 1` to suppress the enlarged
 image. The renderer uses ESPHome's cached Roboto Mono font; if it has not been
-downloaded yet, validate `esphome/victron.yml` once before rendering.
+downloaded yet, ESPHome downloads it during the first preview build. Subsequent
+renders reuse the incremental Host build.
 
 The repository includes a raw-radio fixture for bench testing independently of
 Victron BLE. Before relying on an installed link, follow the packet-loss,

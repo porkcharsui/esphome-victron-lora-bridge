@@ -1,6 +1,8 @@
 esphome:
   name: victron-ble-lora
   friendly_name: Victron BLE LoRa
+  includes:
+    - includes/oled_layouts.h
 
 substitutions:
   component_path: ../components
@@ -27,14 +29,14 @@ i2c:
 
 font:
   - file: "gfonts://Roboto Mono"
-    id: victron_ble_lora_status_font
-    size: 10
-  - file: "gfonts://Roboto Mono"
     id: victron_ble_lora_tiny_font
     size: 8
-  - file: "gfonts://Roboto Mono"
+  - file: "gfonts://Roboto Mono@700"
+    id: victron_ble_lora_value_font
+    size: 13
+  - file: "gfonts://Roboto Mono@700"
     id: victron_ble_lora_soc_font
-    size: 28
+    size: 32
 
 display:
   - platform: ssd1306_i2c
@@ -47,49 +49,7 @@ display:
       const bool shunt_fresh = id(last_shunt_sample_ms) != 0 && now - id(last_shunt_sample_ms) <= 120000;
       const bool solar_fresh = id(last_solar_sample_ms) != 0 && now - id(last_solar_sample_ms) <= 120000;
 
-      it.printf(64, 0, id(victron_ble_lora_tiny_font), TextAlign::TOP_CENTER,
-                "SHUNT:%s  SOLAR:%s",
-                shunt_fresh ? "OK" : "--", solar_fresh ? "OK" : "--");
-
-      constexpr int left_column_center = 39;
-      constexpr int right_column_center = 103;
-      if (!std::isnan(id(shunt_soc).state)) {
-        it.printf(left_column_center, 8, id(victron_ble_lora_soc_font),
-                  TextAlign::TOP_CENTER, "%.0f%%", id(shunt_soc).state);
-      } else {
-        it.print(left_column_center, 8, id(victron_ble_lora_soc_font),
-                 TextAlign::TOP_CENTER, "--%");
-      }
-
-      if (!std::isnan(id(shunt_voltage).state)) {
-        it.printf(right_column_center, 12, id(victron_ble_lora_status_font),
-                  TextAlign::TOP_CENTER, "%.1fV", id(shunt_voltage).state);
-      } else {
-        it.print(right_column_center, 12, id(victron_ble_lora_status_font),
-                 TextAlign::TOP_CENTER, "--.-V");
-      }
-      if (!std::isnan(id(shunt_current).state)) {
-        it.printf(right_column_center, 31, id(victron_ble_lora_status_font),
-                  TextAlign::TOP_CENTER, "%+.1fA", id(shunt_current).state);
-      } else {
-        it.print(right_column_center, 31, id(victron_ble_lora_status_font),
-                 TextAlign::TOP_CENTER, "--.-A");
-      }
-      it.print(right_column_center, 53, id(victron_ble_lora_tiny_font),
-               TextAlign::TOP_CENTER, shunt_fresh ? "FRESH" : "STALE");
-
-      // Keep the complete battery icon inside the same 78-pixel column as SOC.
-      // The numeric SOC remains unmodified, while the gauge itself is safely
-      // clamped to its physical 0-100% range.
-      constexpr int battery_top = 40;
-      constexpr int battery_inner_width = 70;
-      it.rectangle(0, battery_top, 74, 24);
-      it.filled_rectangle(74, battery_top + 7, 4, 10);
-      if (!std::isnan(id(shunt_soc).state)) {
-        const float gauge_soc = std::max(0.0f, std::min(100.0f, id(shunt_soc).state));
-        const int gauge_width = static_cast<int>(std::round(
-            gauge_soc * battery_inner_width / 100.0f));
-        if (gauge_width > 0) {
-          it.filled_rectangle(2, battery_top + 2, gauge_width, 20);
-        }
-      }
+      oled_layouts::draw_battery_data(
+          it, id(victron_ble_lora_tiny_font), id(victron_ble_lora_value_font),
+          id(victron_ble_lora_soc_font), id(shunt_soc).state, id(shunt_voltage).state,
+          id(shunt_current).state, shunt_fresh, solar_fresh);

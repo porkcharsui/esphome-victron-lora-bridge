@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import re
+import struct
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,129 +19,88 @@ sys.modules[SPEC.name] = render_oled
 SPEC.loader.exec_module(render_oled)
 
 
-@pytest.mark.parametrize(
-    ("soc", "expected"),
-    ((None, 0), (-10.0, 0), (0.0, 0), (50.0, 35), (100.0, 70), (110.0, 70)),
-)
-def test_gauge_fill_is_clamped(soc: float | None, expected: int) -> None:
-    assert render_oled.gauge_fill_width(soc) == expected
+@pytest.mark.parametrize("value", ("none", "unknown", "nan", "NaN"))
+def test_optional_float_accepts_unknown_values(value: str) -> None:
+    assert render_oled.parse_optional_float(value) is None
 
 
-@pytest.mark.parametrize(
-    ("rssi", "snr", "expected"),
-    (
-        (None, 9.0, 0),
-        (-67.0, None, 0),
-        (-67.0, 9.0, 4),
-        (-80.0, 9.0, 3),
-        (-67.0, 2.0, 3),
-        (-98.0, -2.0, 2),
-        (-110.0, 8.0, 1),
-        (-70.0, -8.0, 1),
-    ),
-)
-def test_signal_bars_use_weaker_rssi_or_snr(
-    rssi: float | None, snr: float | None, expected: int
-) -> None:
-    assert render_oled.signal_bar_count(rssi, snr) == expected
-
-
-@pytest.mark.parametrize(
-    "state",
-    (
-        render_oled.VanState(soc=0.0),
-        render_oled.VanState(soc=50.0),
-        render_oled.VanState(soc=100.0),
-        render_oled.VanState(soc=None, voltage=None, current=None, shunt_fresh=False),
-        render_oled.VanState(soc=110.0),
-    ),
-)
-def test_van_render_is_native_monochrome(state: object) -> None:
-    image = render_oled.render_van(state)
-    assert image.mode == "1"
-    assert image.size == (128, 64)
-
-
-def test_van_battery_gauge_is_spaced_below_soc_and_reaches_bottom() -> None:
-    image = render_oled.render_van(render_oled.VanState(soc=78.0))
-    assert image.getpixel((0, render_oled.BATTERY_TOP))
-    assert image.getpixel((0, render_oled.DISPLAY_SIZE[1] - 1))
-    assert not any(
-        image.getpixel((x, y))
-        for x in range(render_oled.VAN_LEFT_COLUMN_WIDTH)
-        for y in range(30, render_oled.BATTERY_TOP)
+def test_preview_environment_maps_uplink_battery_state() -> None:
+    args = argparse.Namespace(
+        node="uplink",
+        page="battery",
+        soc=None,
+        voltage=12.8,
+        current=4.2,
+        shunt_fresh=False,
+        solar_fresh=True,
+        wifi="offline",
+        ip="192.168.4.2",
+        link="stale",
+        age=300.0,
+        rssi=None,
+        snr=-2.0,
     )
 
+    environment = render_oled.preview_environment(args)
 
-@pytest.mark.parametrize(
-    ("x_start", "x_end", "y_start", "y_end", "expected_center"),
-    (
-        (0, 128, 0, 9, render_oled.DISPLAY_SIZE[0] // 2),
-        (0, 78, 8, 28, render_oled.VAN_LEFT_COLUMN_CENTER),
-        (78, 128, 12, 23, render_oled.VAN_RIGHT_COLUMN_CENTER),
-        (78, 128, 31, 42, render_oled.VAN_RIGHT_COLUMN_CENTER),
-        (78, 128, 53, 63, render_oled.VAN_RIGHT_COLUMN_CENTER),
-    ),
-)
-def test_van_values_are_centered_in_their_columns(
-    x_start: int, x_end: int, y_start: int, y_end: int, expected_center: int
-) -> None:
-    image = render_oled.render_van(render_oled.VanState(soc=78.0))
-    lit_x = [
-        x
-        for y in range(y_start, y_end)
-        for x in range(x_start, x_end)
-        if image.getpixel((x, y))
-    ]
-    assert abs((min(lit_x) + max(lit_x)) / 2 - expected_center) <= 1
+    assert environment == {
+        "OLED_PREVIEW_SCREEN": "uplink-battery",
+        "OLED_SOC": "unknown",
+        "OLED_VOLTAGE": "12.8",
+        "OLED_CURRENT": "4.2",
+        "OLED_SHUNT_FRESH": "0",
+        "OLED_SOLAR_FRESH": "1",
+        "OLED_WIFI": "0",
+        "OLED_IP": "192.168.4.2",
+        "OLED_LINK": "stale",
+        "OLED_AGE": "300.0",
+        "OLED_RSSI": "unknown",
+        "OLED_SNR": "-2.0",
+    }
 
 
-@pytest.mark.parametrize(
-    "state",
-    (
-        render_oled.UplinkState(),
-        render_oled.UplinkState(link="waiting", age=None, rssi=None, snr=None),
-        render_oled.UplinkState(wifi="offline", link="stale", age=300),
-        render_oled.UplinkState(page="battery"),
-    ),
-)
-def test_uplink_render_is_native_monochrome(state: object) -> None:
-    image = render_oled.render_uplink(state)
-    assert image.mode == "1"
-    assert image.size == (128, 64)
+def test_scaled_output_path() -> None:
+    output = Path("preview.png")
+    assert render_oled.scaled_output_path(output, 1) is None
+    assert render_oled.scaled_output_path(output, 4) == Path("preview@4x.png")
 
 
-def test_uplink_battery_page_matches_van_data_layout() -> None:
-    uplink = render_oled.render_uplink(
-        render_oled.UplinkState(
-            page="battery",
-            soc=61.0,
-            voltage=12.8,
-            current=4.2,
-            shunt_fresh=False,
-            solar_fresh=True,
-        )
+def png_dimensions(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:16] == b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    return struct.unpack(">II", data[16:24])
+
+
+def trimmed_bounds(path: Path, crop: str) -> tuple[int, int, int, int]:
+    result = subprocess.run(
+        ["magick", str(path), "-crop", crop, "-trim", "-format", "%wx%h%O", "info:"],
+        check=True,
+        text=True,
+        capture_output=True,
     )
-    van = render_oled.render_van(
-        render_oled.VanState(
-            soc=61.0,
-            voltage=12.8,
-            current=4.2,
-            shunt_fresh=False,
-            solar_fresh=True,
-        )
-    )
-    assert uplink.tobytes() == van.tobytes()
+    match = re.fullmatch(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", result.stdout)
+    assert match is not None
+    width, height, x, y = map(int, match.groups())
+    return x, y, width, height
 
 
-def test_scaled_preview_uses_nearest_neighbor(tmp_path: Path) -> None:
-    image = render_oled.render_van(render_oled.VanState(soc=78.0))
+def test_esphome_host_renderer_writes_native_and_scaled_previews(tmp_path: Path) -> None:
     output = tmp_path / "van.png"
-    scaled_output = render_oled.save_previews(image, output, scale=4)
+    args = render_oled.build_parser().parse_args(
+        ["--node", "van", "--output", str(output), "--scale", "4"]
+    )
 
-    assert output.exists()
+    scaled_output = render_oled.render_preview(args)
+
+    assert png_dimensions(output) == (128, 64)
     assert scaled_output == tmp_path / "van@4x.png"
-    with Image.open(scaled_output) as scaled:
-        assert scaled.mode == "1"
-        assert scaled.size == (512, 256)
-        assert bool(scaled.getpixel((8, 168))) == bool(image.getpixel((2, 42)))
+    assert png_dimensions(scaled_output) == (512, 256)
+    assert output.stat().st_size > 100
+
+    _, header_y, _, header_height = trimmed_bounds(output, "128x10+0+0")
+    _, soc_y, _, soc_height = trimmed_bounds(output, "78x31+0+9")
+    header_bottom = header_y + header_height - 1
+    soc_bottom = soc_y + soc_height - 1
+    gap_below_header = soc_y - header_bottom - 1
+    gap_above_battery = 40 - soc_bottom - 1
+    assert abs(gap_below_header - gap_above_battery) <= 1

@@ -11,6 +11,7 @@ CONFIGS = (
     "esphome/victron.yml",
     "esphome/victron-maintenance.yml",
     "esphome/bridge.yml",
+    "esphome/oled-preview.yml",
     "tests/fixtures/raw-radio.yml",
 )
 

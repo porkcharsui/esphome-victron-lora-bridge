@@ -30,7 +30,10 @@
               uv
               git
               esptool
+              SDL2
+              imagemagick
               nixfmt
+              pkg-config
               _1password-cli
             ];
             UV_PYTHON = "${pkgs.python313}/bin/python3";

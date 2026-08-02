@@ -1,6 +1,8 @@
 esphome:
   name: victron-ble-lora-uplink
   friendly_name: Victron BLE LoRa Uplink
+  includes:
+    - includes/oled_layouts.h
 
 substitutions:
   component_path: ../components
@@ -31,9 +33,12 @@ font:
   - file: "gfonts://Roboto Mono"
     id: tiny_font
     size: 8
-  - file: "gfonts://Roboto Mono"
+  - file: "gfonts://Roboto Mono@700"
+    id: value_font
+    size: 13
+  - file: "gfonts://Roboto Mono@700"
     id: soc_font
-    size: 28
+    size: 32
 
 display:
   - platform: ssd1306_i2c
@@ -58,98 +63,26 @@ display:
         const bool shunt_fresh = !isnan(shunt_age) && shunt_age <= 120.0f;
         const bool solar_fresh = !isnan(solar_age) && solar_age <= 120.0f;
 
-        it.printf(64, 0, id(tiny_font), TextAlign::TOP_CENTER,
-                  "SHUNT:%s  SOLAR:%s",
-                  shunt_fresh ? "OK" : "--", solar_fresh ? "OK" : "--");
-
-        constexpr int left_column_center = 39;
-        constexpr int right_column_center = 103;
-        if (id(uplink_shunt_soc).has_state() &&
-            !isnan(id(uplink_shunt_soc).state)) {
-          it.printf(left_column_center, 8, id(soc_font), TextAlign::TOP_CENTER,
-                    "%.0f%%", id(uplink_shunt_soc).state);
-        } else {
-          it.print(left_column_center, 8, id(soc_font), TextAlign::TOP_CENTER, "--%");
-        }
-
-        if (id(uplink_shunt_voltage).has_state() &&
-            !isnan(id(uplink_shunt_voltage).state)) {
-          it.printf(right_column_center, 12, id(status_font), TextAlign::TOP_CENTER,
-                    "%.1fV", id(uplink_shunt_voltage).state);
-        } else {
-          it.print(right_column_center, 12, id(status_font),
-                   TextAlign::TOP_CENTER, "--.-V");
-        }
-        if (id(uplink_shunt_current).has_state() &&
-            !isnan(id(uplink_shunt_current).state)) {
-          it.printf(right_column_center, 31, id(status_font), TextAlign::TOP_CENTER,
-                    "%+.1fA", id(uplink_shunt_current).state);
-        } else {
-          it.print(right_column_center, 31, id(status_font),
-                   TextAlign::TOP_CENTER, "--.-A");
-        }
-        it.print(right_column_center, 53, id(tiny_font), TextAlign::TOP_CENTER,
-                 shunt_fresh ? "FRESH" : "STALE");
-
-        constexpr int battery_top = 40;
-        constexpr int battery_inner_width = 70;
-        it.rectangle(0, battery_top, 74, 24);
-        it.filled_rectangle(74, battery_top + 7, 4, 10);
-        if (id(uplink_shunt_soc).has_state() &&
-            !isnan(id(uplink_shunt_soc).state)) {
-          const float gauge_soc = std::max(
-              0.0f, std::min(100.0f, id(uplink_shunt_soc).state));
-          const int gauge_width = static_cast<int>(std::round(
-              gauge_soc * battery_inner_width / 100.0f));
-          if (gauge_width > 0) {
-            it.filled_rectangle(2, battery_top + 2, gauge_width, 20);
-          }
-        }
+        oled_layouts::draw_battery_data(
+            it, id(tiny_font), id(value_font), id(soc_font),
+            id(uplink_shunt_soc).state, id(uplink_shunt_voltage).state,
+            id(uplink_shunt_current).state, shunt_fresh, solar_fresh);
         return;
       }
 
-      it.print(0, 0, id(status_font), "VICTRON LORA BRIDGE");
-      it.horizontal_line(0, 13, 128);
-
+      char ip_address[network::IP_ADDRESS_BUFFER_SIZE] = "";
       if (wifi_connected) {
         const auto addresses = wifi::global_wifi_component->get_ip_addresses();
-        char ip_address[network::IP_ADDRESS_BUFFER_SIZE];
         addresses[0].str_to(ip_address);
-        it.printf(0, 16, id(status_font), "WiFi  %s", ip_address);
-      } else {
-        it.print(0, 16, id(status_font), "WiFi  OFFLINE");
       }
 
-      if (!packet_seen) {
-        it.print(0, 28, id(status_font), "LoRa  WAITING");
-        it.print(0, 40, id(status_font), "Packet  never");
-      } else {
-        it.printf(0, 28, id(status_font), "LoRa  %s", victron_ble_lora_connected ? "OK" : "STALE");
-        if (packet_age < 120.0f) {
-          it.printf(0, 40, id(status_font), "Packet  %.0f sec ago", packet_age);
-        } else {
-          it.printf(0, 40, id(status_font), "Packet  %.0f min ago", packet_age / 60.0f);
-        }
-      }
-
-      if (id(uplink_radio_rssi).has_state() && id(uplink_radio_snr).has_state()) {
-        const float rssi = id(uplink_radio_rssi).state;
-        const float snr = id(uplink_radio_snr).state;
-        it.printf(0, 52, id(status_font), "RF %.0fdBm %.0fdB",
-                  rssi, snr);
-
-        // Rate RSSI and SNR independently, then display the weaker rating so
-        // one favorable measurement cannot hide a marginal LoRa link.
-        const int rssi_bars = rssi >= -75.0f ? 4 : rssi >= -90.0f ? 3 : rssi >= -105.0f ? 2 : 1;
-        const int snr_bars = snr >= 7.0f ? 4 : snr >= 0.0f ? 3 : snr >= -5.0f ? 2 : 1;
-        const int signal_bars = std::min(rssi_bars, snr_bars);
-        for (int bar = 0; bar < signal_bars; bar++) {
-          const int height = 3 + bar * 3;
-          it.filled_rectangle(110 + bar * 4, 64 - height, 3, height);
-        }
-      } else {
-        it.print(0, 52, id(status_font), "RF  listening");
-      }
+      const bool radio_available = id(uplink_radio_rssi).has_state() &&
+                                   id(uplink_radio_snr).has_state();
+      oled_layouts::draw_uplink_home(
+          it, id(status_font), wifi_connected, ip_address, packet_seen,
+          victron_ble_lora_connected, packet_age, radio_available,
+          radio_available ? id(uplink_radio_rssi).state : NAN,
+          radio_available ? id(uplink_radio_snr).state : NAN);
 
 packet_transport:
   platform: sx1280

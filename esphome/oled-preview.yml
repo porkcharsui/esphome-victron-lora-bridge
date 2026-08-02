@@ -1,0 +1,82 @@
+esphome:
+  name: oled-preview
+  friendly_name: OLED Preview
+  includes:
+    - includes/oled_layouts.h
+    - includes/sdl_capture.h
+  on_boot:
+    - priority: -100
+      then:
+        - component.update: preview_display
+        - delay: 50ms
+        - lambda: |-
+            const char *output = std::getenv("OLED_PREVIEW_BMP");
+            if (output == nullptr || !oled_preview::save_sdl_bmp(output)) {
+              ESP_LOGE("oled_preview", "Could not capture the SDL display");
+              std::exit(2);
+            }
+            std::exit(0);
+
+host:
+
+logger:
+  level: ERROR
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: status_font
+    size: 10
+  - file: "gfonts://Roboto Mono"
+    id: tiny_font
+    size: 8
+  - file: "gfonts://Roboto Mono@700"
+    id: value_font
+    size: 13
+  - file: "gfonts://Roboto Mono@700"
+    id: soc_font
+    size: 32
+
+display:
+  - platform: sdl
+    id: preview_display
+    dimensions:
+      width: 128
+      height: 64
+    update_interval: never
+    lambda: |-
+      const auto env = [](const char *name, const char *fallback) {
+        const char *value = std::getenv(name);
+        return value == nullptr ? fallback : value;
+      };
+      const auto env_bool = [&env](const char *name, bool fallback) {
+        return std::strcmp(env(name, fallback ? "1" : "0"), "1") == 0;
+      };
+      const auto env_float = [&env](const char *name, float fallback) {
+        const char *value = env(name, nullptr);
+        if (value == nullptr || std::strcmp(value, "unknown") == 0 ||
+            std::strcmp(value, "none") == 0 || std::strcmp(value, "nan") == 0) {
+          return fallback;
+        }
+        return std::strtof(value, nullptr);
+      };
+
+      const char *screen = env("OLED_PREVIEW_SCREEN", "van");
+      if (std::strcmp(screen, "van") == 0 ||
+          std::strcmp(screen, "uplink-battery") == 0) {
+        oled_layouts::draw_battery_data(
+            it, id(tiny_font), id(value_font), id(soc_font),
+            env_float("OLED_SOC", NAN), env_float("OLED_VOLTAGE", NAN),
+            env_float("OLED_CURRENT", NAN), env_bool("OLED_SHUNT_FRESH", true),
+            env_bool("OLED_SOLAR_FRESH", true));
+        return;
+      }
+
+      const char *link = env("OLED_LINK", "ok");
+      const bool packet_seen = std::strcmp(link, "waiting") != 0;
+      const float rssi = env_float("OLED_RSSI", NAN);
+      const float snr = env_float("OLED_SNR", NAN);
+      oled_layouts::draw_uplink_home(
+          it, id(status_font), env_bool("OLED_WIFI", true),
+          env("OLED_IP", "192.168.1.42"), packet_seen,
+          std::strcmp(link, "ok") == 0, env_float("OLED_AGE", NAN),
+          !std::isnan(rssi) && !std::isnan(snr), rssi, snr);

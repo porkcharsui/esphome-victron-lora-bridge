@@ -1,55 +1,27 @@
 #!/usr/bin/env python3
-"""Render the ESPHome OLED layouts without flashing either node."""
+"""Render the firmware's OLED layouts through ESPHome Host and SDL."""
 
 from __future__ import annotations
 
 import argparse
-import math
-from dataclasses import dataclass
+import os
+import subprocess
+import tempfile
 from pathlib import Path
-
-from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DISPLAY_SIZE = (128, 64)
-DEFAULT_FONT_PATTERN = "Roboto Mono@400@False@*.ttf"
-VAN_LEFT_COLUMN_WIDTH = 78
-VAN_LEFT_COLUMN_CENTER = VAN_LEFT_COLUMN_WIDTH // 2
-VAN_RIGHT_COLUMN_CENTER = (
-    VAN_LEFT_COLUMN_WIDTH + (DISPLAY_SIZE[0] - VAN_LEFT_COLUMN_WIDTH) // 2
+PREVIEW_CONFIG = ROOT / "esphome" / "oled-preview.yml"
+PREVIEW_PROGRAM = (
+    ROOT
+    / "esphome"
+    / ".esphome"
+    / "build"
+    / "oled-preview"
+    / ".pioenvs"
+    / "oled-preview"
+    / "program"
 )
-BATTERY_TERMINAL_WIDTH = 4
-BATTERY_BODY_WIDTH = VAN_LEFT_COLUMN_WIDTH - BATTERY_TERMINAL_WIDTH
-BATTERY_INNER_WIDTH = BATTERY_BODY_WIDTH - 4
-SOC_TOP = 8
-BATTERY_TOP = 40
-BATTERY_HEIGHT = DISPLAY_SIZE[1] - BATTERY_TOP
-
-
-@dataclass(frozen=True)
-class VanState:
-    soc: float | None = 78.0
-    voltage: float | None = 13.2
-    current: float | None = -2.4
-    shunt_fresh: bool = True
-    solar_fresh: bool = True
-
-
-@dataclass(frozen=True)
-class UplinkState:
-    page: str = "home"
-    wifi: str = "connected"
-    ip: str = "192.168.1.42"
-    link: str = "ok"
-    age: float | None = 12.0
-    rssi: float | None = -67.0
-    snr: float | None = 9.0
-    soc: float | None = 78.0
-    voltage: float | None = 13.2
-    current: float | None = -2.4
-    shunt_fresh: bool = True
-    solar_fresh: bool = True
 
 
 def parse_optional_float(value: str) -> float | None:
@@ -58,160 +30,92 @@ def parse_optional_float(value: str) -> float | None:
     return float(value)
 
 
-def resolve_font_path() -> Path:
-    font_dir = ROOT / "esphome" / ".esphome" / "font"
-    matches = sorted(font_dir.glob(DEFAULT_FONT_PATTERN))
-    if matches:
-        return matches[-1]
-    raise FileNotFoundError(
-        "Roboto Mono is not in ESPHome's font cache. Run "
-        "`nix develop --command uv run esphome config esphome/victron.yml` first."
-    )
-
-
-def load_font(font_path: Path, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(font_path, size=size)
-
-
-def draw_text(
-    draw: ImageDraw.ImageDraw,
-    xy: tuple[int, int],
-    text: str,
-    font: ImageFont.FreeTypeFont,
-    anchor: str = "lt",
-) -> None:
-    draw.text(xy, text, font=font, fill=1, anchor=anchor, stroke_width=0)
-
-
-def gauge_fill_width(soc: float | None) -> int:
-    if soc is None or math.isnan(soc):
-        return 0
-    return math.floor(max(0.0, min(100.0, soc)) * BATTERY_INNER_WIDTH / 100.0 + 0.5)
-
-
-def signal_bar_count(rssi: float | None, snr: float | None) -> int:
-    if rssi is None or snr is None or math.isnan(rssi) or math.isnan(snr):
-        return 0
-    rssi_bars = 4 if rssi >= -75 else 3 if rssi >= -90 else 2 if rssi >= -105 else 1
-    snr_bars = 4 if snr >= 7 else 3 if snr >= 0 else 2 if snr >= -5 else 1
-    return min(rssi_bars, snr_bars)
-
-
-def render_van(state: VanState, font_path: Path | None = None) -> Image.Image:
-    font_path = font_path or resolve_font_path()
-    tiny = load_font(font_path, 8)
-    status = load_font(font_path, 10)
-    soc_font = load_font(font_path, 28)
-    image = Image.new("1", DISPLAY_SIZE, 0)
-    draw = ImageDraw.Draw(image)
-
-    shunt = "OK" if state.shunt_fresh else "--"
-    solar = "OK" if state.solar_fresh else "--"
-    draw_text(
-        draw,
-        (DISPLAY_SIZE[0] // 2, 0),
-        f"SHUNT:{shunt}  SOLAR:{solar}",
-        tiny,
-        anchor="mt",
-    )
-
-    soc_text = "--%" if state.soc is None else f"{state.soc:.0f}%"
-    draw_text(
-        draw,
-        (VAN_LEFT_COLUMN_CENTER, SOC_TOP),
-        soc_text,
-        soc_font,
-        anchor="mt",
-    )
-    voltage = "--.-V" if state.voltage is None else f"{state.voltage:.1f}V"
-    current = "--.-A" if state.current is None else f"{state.current:+.1f}A"
-    draw_text(draw, (VAN_RIGHT_COLUMN_CENTER, 12), voltage, status, anchor="mt")
-    draw_text(draw, (VAN_RIGHT_COLUMN_CENTER, 31), current, status, anchor="mt")
-    draw_text(
-        draw,
-        (VAN_RIGHT_COLUMN_CENTER, 53),
-        "FRESH" if state.shunt_fresh else "STALE",
-        tiny,
-        anchor="mt",
-    )
-
-    draw.rectangle(
-        (0, BATTERY_TOP, BATTERY_BODY_WIDTH - 1, DISPLAY_SIZE[1] - 1),
-        outline=1,
-    )
-    draw.rectangle(
-        (
-            BATTERY_BODY_WIDTH,
-            BATTERY_TOP + 7,
-            VAN_LEFT_COLUMN_WIDTH - 1,
-            BATTERY_TOP + 16,
-        ),
-        fill=1,
-    )
-    fill_width = gauge_fill_width(state.soc)
-    if fill_width:
-        draw.rectangle(
-            (2, BATTERY_TOP + 2, 1 + fill_width, DISPLAY_SIZE[1] - 3),
-            fill=1,
-        )
-    return image
-
-
-def render_uplink(state: UplinkState, font_path: Path | None = None) -> Image.Image:
-    font_path = font_path or resolve_font_path()
-    if state.page == "battery":
-        return render_van(
-            VanState(
-                soc=state.soc,
-                voltage=state.voltage,
-                current=state.current,
-                shunt_fresh=state.shunt_fresh,
-                solar_fresh=state.solar_fresh,
-            ),
-            font_path,
-        )
-
-    status = load_font(font_path, 10)
-    image = Image.new("1", DISPLAY_SIZE, 0)
-    draw = ImageDraw.Draw(image)
-
-    draw_text(draw, (0, 0), "VICTRON LORA BRIDGE", status)
-    draw.line((0, 13, 127, 13), fill=1)
-    wifi_text = f"WiFi  {state.ip}" if state.wifi == "connected" else "WiFi  OFFLINE"
-    draw_text(draw, (0, 16), wifi_text, status)
-
-    if state.link == "waiting":
-        draw_text(draw, (0, 28), "LoRa  WAITING", status)
-        draw_text(draw, (0, 40), "Packet  never", status)
-    else:
-        draw_text(draw, (0, 28), f"LoRa  {state.link.upper()}", status)
-        if state.age is None:
-            age_text = "Packet  never"
-        elif state.age < 120:
-            age_text = f"Packet  {state.age:.0f} sec ago"
-        else:
-            age_text = f"Packet  {state.age / 60.0:.0f} min ago"
-        draw_text(draw, (0, 40), age_text, status)
-
-    if state.rssi is not None and state.snr is not None:
-        radio_text = f"RF {state.rssi:.0f}dBm {state.snr:.0f}dB"
-    else:
-        radio_text = "RF  listening"
-    draw_text(draw, (0, 52), radio_text, status)
-    for bar in range(signal_bar_count(state.rssi, state.snr)):
-        height = 3 + bar * 3
-        draw.rectangle((110 + bar * 4, 64 - height, 112 + bar * 4, 63), fill=1)
-    return image
-
-
-def save_previews(image: Image.Image, output: Path, scale: int) -> Path | None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output)
+def scaled_output_path(output: Path, scale: int) -> Path | None:
     if scale <= 1:
         return None
-    scaled_output = output.with_name(f"{output.stem}@{scale}x{output.suffix}")
-    scaled = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
-    scaled.save(scaled_output)
+    return output.with_name(f"{output.stem}@{scale}x{output.suffix}")
+
+
+def preview_environment(args: argparse.Namespace) -> dict[str, str]:
+    def number(value: float | None) -> str:
+        return "unknown" if value is None else str(value)
+
+    screen = "van" if args.node == "van" else f"uplink-{args.page}"
+    return {
+        "OLED_PREVIEW_SCREEN": screen,
+        "OLED_SOC": number(args.soc),
+        "OLED_VOLTAGE": number(args.voltage),
+        "OLED_CURRENT": number(args.current),
+        "OLED_SHUNT_FRESH": "1" if args.shunt_fresh else "0",
+        "OLED_SOLAR_FRESH": "1" if args.solar_fresh else "0",
+        "OLED_WIFI": "1" if args.wifi == "connected" else "0",
+        "OLED_IP": args.ip,
+        "OLED_LINK": args.link,
+        "OLED_AGE": number(args.age),
+        "OLED_RSSI": number(args.rssi),
+        "OLED_SNR": number(args.snr),
+    }
+
+
+def compile_preview() -> None:
+    subprocess.run(
+        ["esphome", "compile", str(PREVIEW_CONFIG)],
+        cwd=ROOT,
+        check=True,
+    )
+    if not PREVIEW_PROGRAM.is_file():
+        raise RuntimeError(f"ESPHome did not produce the expected Host program: {PREVIEW_PROGRAM}")
+
+
+def render_preview(args: argparse.Namespace) -> Path | None:
+    compile_preview()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    scaled_output = scaled_output_path(args.output, args.scale)
+
+    with tempfile.TemporaryDirectory(prefix="oled-preview-") as temporary_directory:
+        capture = Path(temporary_directory) / "capture.bmp"
+        environment = os.environ.copy()
+        environment.update(preview_environment(args))
+        environment.update(
+            {
+                "OLED_PREVIEW_BMP": str(capture),
+                "SDL_AUDIODRIVER": "dummy",
+                "SDL_VIDEODRIVER": "dummy",
+            }
+        )
+        subprocess.run([str(PREVIEW_PROGRAM)], cwd=ROOT, env=environment, check=True)
+        subprocess.run(
+            [
+                "magick",
+                str(capture),
+                "-colorspace",
+                "Gray",
+                "-threshold",
+                "50%",
+                "-type",
+                "bilevel",
+                str(args.output),
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+
+    if scaled_output is not None:
+        subprocess.run(
+            [
+                "magick",
+                str(args.output),
+                "-filter",
+                "point",
+                "-resize",
+                f"{args.scale * 100}%",
+                "-type",
+                "bilevel",
+                str(scaled_output),
+            ],
+            cwd=ROOT,
+            check=True,
+        )
     return scaled_output
 
 
@@ -248,36 +152,9 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.scale < 1:
         raise SystemExit("--scale must be at least 1")
-    if args.node == "van":
-        image = render_van(
-            VanState(
-                soc=args.soc,
-                voltage=args.voltage,
-                current=args.current,
-                shunt_fresh=args.shunt_fresh,
-                solar_fresh=args.solar_fresh,
-            )
-        )
-    else:
-        image = render_uplink(
-            UplinkState(
-                page=args.page,
-                wifi=args.wifi,
-                ip=args.ip,
-                link=args.link,
-                age=args.age,
-                rssi=args.rssi,
-                snr=args.snr,
-                soc=args.soc,
-                voltage=args.voltage,
-                current=args.current,
-                shunt_fresh=args.shunt_fresh,
-                solar_fresh=args.solar_fresh,
-            )
-        )
-    scaled_output = save_previews(image, args.output, args.scale)
+    scaled_output = render_preview(args)
     print(f"Wrote {args.output}")
-    if scaled_output:
+    if scaled_output is not None:
         print(f"Wrote {scaled_output}")
 
 
