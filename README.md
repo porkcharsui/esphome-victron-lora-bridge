@@ -1,8 +1,20 @@
-# ESPHome Victron LoRa Bridge
+# Victron BLE LoRa Bridge
 
-A two-node, read-only telemetry bridge that carries Victron SmartShunt and
-SmartSolar data from an off-grid system over a long-distance 2.4 GHz LoRa link
-to a Wi-Fi-connected ESPHome node, which publishes the data to Home Assistant.
+A read-only bridge for carrying Victron SmartShunt and SmartSolar telemetry
+beyond Bluetooth range. This repository supports two independent deployment
+paths:
+
+- **ESPHome and Home Assistant:** a dedicated two-node 2.4 GHz LoRa link ends
+  at a Wi-Fi-connected ESPHome receiver that publishes Home Assistant entities.
+- **Meshtastic off-grid telemetry:** a USB-powered TTGO T-LoRa V1 or original
+  T-Echo listens for Victron BLE advertisements and publishes native device and
+  power telemetry over a region-appropriate sub-GHz Meshtastic network. This
+  path does not require Home Assistant, Wi-Fi, ESPHome, UART, or a second MCU.
+
+Choose the ESPHome path when the destination is a fixed Home Assistant
+installation. Choose the [Meshtastic path](#meshtastic-off-grid-path) when the
+installation should remain off-grid and its battery values and low-SOC alerts
+need to be available to ordinary Meshtastic clients across an existing mesh.
 
 ## The use case
 
@@ -12,8 +24,8 @@ other off-grid system may be parked close enough for a point-to-point radio
 link while still being outside reliable Bluetooth or Wi-Fi coverage. Adding
 the vehicle itself to the home network may also be undesirable.
 
-This project places one ESP32 beside the Victron equipment and another inside
-the Wi-Fi-covered building:
+The ESPHome path places one ESP32 beside the Victron equipment and another
+inside the Wi-Fi-covered building:
 
 ```text
 SmartShunt + SmartSolar
@@ -39,7 +51,7 @@ active, each press switches between its link-status home screen and remote
 battery-data screen and restarts the timeout. The van display remains
 single-page, so an active press only restarts its timeout.
 
-## What it reports
+## What the ESPHome path reports
 
 - SmartShunt voltage, current, power, state of charge, consumed amp-hours,
   remaining time, and alarm state
@@ -51,7 +63,7 @@ single-page, so an active press only restarts its timeout.
 This is a monitoring bridge only. It does not send commands to Victron devices
 and should not be used as the sole source of safety-critical alarms.
 
-## Architecture and design choices
+## ESPHome architecture and design choices
 
 | Node | Role | Network access |
 | --- | --- | --- |
@@ -79,7 +91,35 @@ and should not be used as the sole source of safety-critical alarms.
 > hardware is not a drop-in replacement for the SX1280 boards and configuration
 > supplied here, and permitted frequencies vary by region.
 
-## Hardware
+## Meshtastic off-grid path
+
+The external overlay under `meshtastic/` adds `tlora-v1-victron` and
+`t-echo-victron` targets to a pinned Meshtastic firmware submodule. A single
+Meshtastic node placed within BLE range of the Victron equipment performs the
+entire bridge:
+
+```text
+SmartShunt + optional SmartSolar
+        │ encrypted Victron BLE advertisements
+        ▼
+TTGO T-LoRa V1 or original T-Echo
+        │ native Meshtastic telemetry over sub-GHz LoRa
+        ▼
+Meshtastic network and mobile clients
+```
+
+The bridge reports SmartShunt SOC as the Meshtastic node's battery percentage,
+with voltage and current in Power Metrics channel 1. An optional SmartSolar is
+reported in channel 2. It can also broadcast a low-SOC channel message. The
+board's own battery telemetry is intentionally replaced by the Victron battery
+values, so the bridge may simply remain powered over USB.
+
+This is an alternative to the ESPHome architecture, not an uplink for it. No
+Home Assistant server or Wi-Fi-covered receiving location is needed. See the
+[Meshtastic Victron firmware guide](docs/meshtastic-firmware.md) for supported
+boards, secrets, building, flashing, client behavior, and troubleshooting.
+
+## ESPHome path hardware
 
 The supplied configuration targets:
 
@@ -99,8 +139,9 @@ before flashing either board.
 
 ### 3D-printable case
 
-The [3MF project](case/esphome-victron-lora-bridge.3mf) includes the slimline
-case and a remixed lid that attaches to an IKEA SKÅDIS pegboard. See the
+The [LILYGO T3-S3 slimline case project](case/lilygo-t3-s3-slimline-case.3mf)
+includes the standard case and a remixed lid that attaches to an IKEA SKÅDIS
+pegboard. See the
 [case attribution and license](case/README.md) before redistributing or
 modifying the model.
 
@@ -120,7 +161,7 @@ the project-local Python environment. Do not install project dependencies
 system-wide. All commands below assume they are run from the repository root
 with this development shell active.
 
-## Getting started
+## ESPHome getting started
 
 ### 1. Enable Victron Instant Readout
 
@@ -236,6 +277,7 @@ power-cycle, stale-data, and soak-test checklist in the
 
 ## Documentation
 
+- [Meshtastic Victron firmware build and usage](docs/meshtastic-firmware.md)
 - [Deployment, hardware qualification, and acceptance testing](docs/deployment.md)
 - [SX1280 component configuration and behavior](docs/sx1280-component.md)
 - [Optional 1Password secret injection](docs/1password.md)

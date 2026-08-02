@@ -1,7 +1,8 @@
 # 3D-printable case
 
-The 3MF project contains a standard slimline case and lid plus a lid designed
-to attach the enclosure to an IKEA SKÅDIS pegboard.
+The [`lilygo-t3-s3-slimline-case.3mf`](lilygo-t3-s3-slimline-case.3mf) project
+contains a standard LILYGO T3-S3 slimline case and lid plus a lid designed to
+attach the enclosure to an IKEA SKÅDIS pegboard.
 
 ## Attribution
 

@@ -1,5 +1,5 @@
 {
-  description = "Victron BLE to SX1280 ESPHome bridge";
+  description = "Victron BLE telemetry bridge for ESPHome and Meshtastic";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
@@ -20,7 +20,12 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            config.allowUnfreePredicate = pkg: nixpkgs.lib.getName pkg == "1password-cli";
+            config.allowUnfreePredicate =
+              pkg:
+              builtins.elem (nixpkgs.lib.getName pkg) [
+                "1password-cli"
+                "trunk-io"
+              ];
           };
         in
         {
@@ -33,6 +38,7 @@
               SDL2
               imagemagick
               nixfmt
+              trunk-io
               pkg-config
               _1password-cli
             ];

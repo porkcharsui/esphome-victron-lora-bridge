@@ -1,0 +1,3 @@
+[submodule "meshtastic/firmware"]
+	path = meshtastic/firmware
+	url = git@github.com:porkcharsui/meshtastic-firmware.git
